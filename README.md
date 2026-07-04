@@ -4,20 +4,20 @@ A cross-platform, production-ready hybrid AI architecture that distributes workl
 
 ---
 
-## 🚀 Core Architecture & Features
+## Core Architecture & Features
 
 This project addresses standard corporate data-privacy limitations and edge-memory bottlenecks via a decoupled design pattern:
 
-* **Cloud Orchestration Layer:** A lightweight, containerized FastAPI application ready for cloud deployment. It manages API credential validation, client-facing request schema checking, and rolling sliding-window rate limiting.
-* **Encrypted Tunneling Connection:** Leverages Cloudflare Tunnels to pipe inbound gateway data straight to local hardware. This setup removes the security liability of opening inbound router ports or exposing static residential public IP addresses.
-* **Dual-Engine Hardware Router:** An intelligent inference worker script detects the execution environment at startup. It maps requests natively through **Apple Silicon Metal (MLX)** if run on a Mac, or leverages **NVIDIA CUDA (Unsloth)** if run on Windows/Linux.
-* **Asymmetric LoRA Lobe Specialization:** Rather than deploying a monolithic fine-tuned checkpoint, the system mounts task-specific adapters to a single 4-bit base model (`Qwen/Qwen2.5-7B-Instruct`). 
-    * **Text Generation Adapter (r=16, α=16):** Fine-tuned for rapid instruction following and conversational workflows.
-    * **Reasoning Lobe (r=32, α=32):** Higher-rank allocation dedicated to step-by-step mathematical reasoning and chain-of-thought calculation patterns.
+- **Cloud Orchestration Layer:** A lightweight, containerized FastAPI application ready for cloud deployment. It manages API credential validation, client-facing request schema checking, and rolling sliding-window rate limiting.
+- **Encrypted Tunneling Connection:** Leverages Cloudflare Tunnels to pipe inbound gateway data straight to local hardware. This setup removes the security liability of opening inbound router ports or exposing static residential public IP addresses.
+- **Dual-Engine Hardware Router:** An intelligent inference worker script detects the execution environment at startup. It maps requests natively through **Apple Silicon Metal (MLX)** if run on a Mac, or leverages **NVIDIA CUDA (Unsloth)** if run on Windows/Linux.
+- **Asymmetric LoRA Lobe Specialization:** Rather than deploying a monolithic fine-tuned checkpoint, the system mounts task-specific adapters to a single 4-bit base model (`Qwen/Qwen2.5-7B-Instruct`).
+  - **Text Generation Adapter (r=16, α=16):** Fine-tuned for rapid instruction following and conversational workflows.
+  - **Reasoning Lobe (r=32, α=32):** Higher-rank allocation dedicated to step-by-step mathematical reasoning and chain-of-thought calculation patterns.
 
 ---
 
-## 📂 Repository Layout
+## Repository Layout
 
 ```text
 llm-routing-pipeline/
@@ -50,7 +50,7 @@ llm-routing-pipeline/
 │       │   └── routes.py             # Validates keys and handles proxy forwarding
 │       ├── core/
 │       │   ├── config.py             # Parses environment states securely
-│       │   └── security.py           # Slide-window rate limiting calculations
+│       │   └── security.py           # Sliding-window rate limiting calculations
 │       └── services/
 │           └── llm_client.py         # Routes async requests forward via tunnel
 │
@@ -58,70 +58,106 @@ llm-routing-pipeline/
 ├── .env.example                      # Template outlining required security variable keys
 ├── .gitignore                        # Standard protection schemas avoiding credential leakage
 └── README.md                         # Architecture reference documentation
+```
 
-
-
+---
 
 ## Hardware & Software Configuration Details
 
-The engine utilizes specific runtime parameters to run 7B parameters on 8GB memory constraints safely without triggering Out-Of-Memory (OOM) faults:
+The engine utilizes specific runtime parameters to run 7B parameter models safely on 8GB memory constraints without triggering Out-Of-Memory (OOM) faults.
 
-* **Quantization:** Base models are loaded in strict 4-bit precision, reducing standard weight footprint from roughly 14GB down to 5.5GB.
-* **Memory Optimization:** The training loops use `adamw_8bit` optimizer states and gradient accumulation configurations to reduce peak active activation memory thresholds.
-* **Hardware Fallbacks:** On Darwin platforms, `mlx-lm` reads unified system arrays efficiently. On CUDA platforms, the system automatically injects Unsloth's optimized fused kernels for a 2x inference performance boost.
+- **Quantization:** Base models are loaded in strict 4-bit precision, reducing the standard weight footprint from roughly 14GB to approximately 5.5GB.
+- **Memory Optimization:** Training uses the `adamw_8bit` optimizer together with gradient accumulation to reduce peak memory consumption.
+- **Hardware Fallbacks:** On macOS, `mlx-lm` leverages Apple's unified memory architecture. On CUDA-capable systems, Unsloth injects optimized fused kernels for significantly faster inference.
 
 ---
 
 ## Step-by-Step Pipeline Execution Guide
 
-To execute this distributed architecture, the modules must be brought online sequentially from the bottom up.
+To execute this distributed architecture, start the components from the bottom up.
 
 ### 1. Fine-Tuning Step (Pre-requisite)
-1. Run the notebooks inside `training/notebooks/` using an NVIDIA environment (such as Google Colab).
-2. Execute `01_data_cleaning.ipynb` to download and structure your base fine-tuning sets into standard ShareGPT formats.
-3. Train both model lobes by executing `02_finetune_text.ipynb` and `03_finetune_reason.ipynb`.
-4. Securely download the output weight matrices and place them directly into your local machine folder structure at: `inference_worker/adapters/text_gen_lora_adapter/` and `inference_worker/adapters/reasoning_lora_adapter/`.
 
-### 2. Launching the Local Inference Node (Terminal 1)
+1. Run the notebooks inside `training/notebooks/` using an NVIDIA-enabled environment (e.g., Google Colab).
+2. Execute `01_data_cleaning.ipynb` to download and convert datasets into ShareGPT conversation format.
+3. Train both LoRA adapters by running:
+   - `02_finetune_text.ipynb`
+   - `03_finetune_reason.ipynb`
+4. Download the generated adapter weights and place them into:
+
+```text
+inference_worker/adapters/text_gen_lora_adapter/
+inference_worker/adapters/reasoning_lora_adapter/
+```
+
+---
+
+### 2. Launch the Local Inference Node (Terminal 1)
+
 ```bash
 cd inference_worker
+
 python3 -m venv venv
 source venv/bin/activate
+
 pip install -r requirements.txt
+
 python3 -m uvicorn local_server:app --host 0.0.0.0 --port 8000
-Verification: Open http://localhost:8000/docs in your web browser to check the automated Swagger documentation UI for the endpoint /v1/execute.
+```
 
-3. Activating the Encrypted Interceptor Tunnel (Terminal 2)
-Bash
+> **Verification:** Open `http://localhost:8000/docs` to access the automatically generated Swagger UI and verify the `/v1/execute` endpoint.
+
+---
+
+### 3. Activate the Encrypted Tunnel (Terminal 2)
+
+```bash
 cloudflared tunnel --url http://localhost:8000
-Look through the running terminal print logs for a block that outputs:
+```
 
-Plaintext
+Expected output:
+
+```text
 +------------------------------------------------------------+
-|  Your quick tunnel has been created! Visit it at:          |
-|  [https://your-random-subdomain.trycloudflare.com](https://your-random-subdomain.trycloudflare.com)           |
+| Your quick tunnel has been created! Visit it at:           |
+| https://your-random-subdomain.trycloudflare.com            |
 +------------------------------------------------------------+
-Copy your unique generated .trycloudflare.com domain destination string.
+```
 
-4. Deploying the API Gateway (Terminal 3)
-Initialize your active environment parameters out of the template file layout:
+Copy the generated `.trycloudflare.com` URL.
 
-Bash
+---
+
+### 4. Deploy the API Gateway (Terminal 3)
+
+Create your environment file:
+
+```bash
 cp .env.example .env
-Open the newly generated .env file and insert your authorization values and tunnel destination:
+```
 
-Plaintext
+Update `.env`:
+
+```text
 VALID_API_KEYS=sk-portfolio-token-value
-EDGE_WORKER_URL=[https://your-random-subdomain.trycloudflare.com/v1/execute](https://your-random-subdomain.trycloudflare.com/v1/execute)
-Initialize the microservices network via docker compose:
+EDGE_WORKER_URL=https://your-random-subdomain.trycloudflare.com/v1/execute
+```
 
-Bash
+Build and start the gateway:
+
+```bash
 docker-compose up --build
-Validation and Usage
-With all pipelines active, you can query the system externally via standard curl commands pointed directly at your public-facing gateway tier (port 8080).
+```
 
-Text Generation Route Validation
-Bash
+---
+
+## Validation & Usage
+
+Once all services are running, send requests to the gateway exposed on **port 8080**.
+
+### Text Generation Request
+
+```bash
 curl -X POST http://localhost:8080/api/v1/generate \
   -H "X-API-Key: sk-portfolio-token-value" \
   -H "Content-Type: application/json" \
@@ -129,8 +165,13 @@ curl -X POST http://localhost:8080/api/v1/generate \
     "prompt": "Compose a brief tagline for a secure software engineering platform.",
     "intent": "text"
   }'
-Mathematical Reasoning Route Validation
-Bash
+```
+
+---
+
+### Mathematical Reasoning Request
+
+```bash
 curl -X POST http://localhost:8080/api/v1/generate \
   -H "X-API-Key: sk-portfolio-token-value" \
   -H "Content-Type: application/json" \
@@ -138,10 +179,18 @@ curl -X POST http://localhost:8080/api/v1/generate \
     "prompt": "Find the next item in the logical mathematical series: 2, 4, 8, 16...",
     "intent": "reason"
   }'
-Response Schema Structure Example
-JSON
+```
+
+---
+
+### Example Response
+
+```json
 {
   "active_lobe": "reason",
   "engine_used": "Apple MLX",
-  "response": "1. Analyze the pattern: each number multiplies the previous term by 2.\n2. Calculate: 16 * 2 = 32.\nThe next value in the series is 32."
+  "response": "1. Analyze the pattern: each number doubles the previous term.\n2. Compute: 16 × 2 = 32.\nThe next value in the series is 32."
 }
+```
+
+---
