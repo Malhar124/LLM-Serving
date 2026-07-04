@@ -81,8 +81,8 @@ To execute this distributed architecture, start the components from the bottom u
 1. Run the notebooks inside `training/notebooks/` using an NVIDIA-enabled environment (e.g., Google Colab).
 2. Execute `01_data_cleaning.ipynb` to download and convert datasets into ShareGPT conversation format.
 3. Train both LoRA adapters by running:
-   - `02_finetune_text.ipynb`
-   - `03_finetune_reason.ipynb`
+   - `finetune_text.ipynb`
+   - `finetune_reason.ipynb`
 4. Download the generated adapter weights and place them into:
 
 ```text
